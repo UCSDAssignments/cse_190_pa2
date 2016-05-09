@@ -32,9 +32,6 @@ class RobotLocalizer():
 		constructLikelihood()
 		move_robot()
 		rospy.spin()
-
-	def re_weight():
-		for data in self.laser_array:
 			
 	def move_robot():
 		move_list = self.json_data["move_list"]
