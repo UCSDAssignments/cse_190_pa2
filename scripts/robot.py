@@ -148,9 +148,11 @@ class RobotLocalizer():
 	def re_weight(self):
 		z_hit = self.json_data["laser_z_hit"]
 		z_rand = self.json_data["laser_z_rand"]
-		print self.orig_grid.data
+		
 		for particle in self.particle_array:
-			
+			if math.isnan(self.MapInstance.get_cell(particle.x,particle.y)):
+				particle.weight = 0
+				continue
 			pz_array = []
 			for idx, val in enumerate(self.laser_data.ranges):	
 				angle = particle.theta + (self.laser_data.angle_min +
