@@ -26,7 +26,7 @@ class RobotLocalizer():
 	def __init__(self):
 		rospy.init_node("robot_node", anonymous=True)
 		self.json_data = read_config()
-		random.seed(self.json_data["seed"])
+		random.seed(200) #
 		self.orig_grid = None
 		self.laser_data = None
 		self.pose_array = None
@@ -97,8 +97,8 @@ class RobotLocalizer():
 		for idx, sample in enumerate(samples):
 			particle = Particle(sample.x,sample.y,sample.theta,sample.weight)
 			particle.pose = sample.pose
-			x_noise = random.gauss(0, self.json_data["resample_sigma_x"])
-			y_noise = random.gauss(0, self.json_data["resample_sigma_y"])
+			x_noise = random.gauss(0, 1) #self.json_data["resample_sigma_x"]
+			y_noise = random.gauss(0, 1) #self.json_data["resample_sigma_y"]
 			angle_noise = random.gauss(0, self.json_data["resample_sigma_angle"])
 			particle.x += x_noise
 			particle.y += y_noise
@@ -121,7 +121,7 @@ class RobotLocalizer():
 				particle.weight = 0
 				continue
 			pz_array = []
-			for idx,val in enumerate(self.laser_data.ranges[::10]):	
+			for idx,val in enumerate(self.laser_data.ranges):	
 				angle = particle.theta + (self.laser_data.angle_min +
 					self.laser_data.angle_increment * idx)
 				x = particle.x + val * math.cos(angle)
