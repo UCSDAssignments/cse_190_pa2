@@ -8,7 +8,9 @@ from geometry_msgs.msg import Pose, PoseArray
 from helper_functions import *
 from sklearn.neighbors import KDTree
 from map_utils import Map
+from copy import deepcopy
 import rospy, random, math
+import numpy as np
 
 OCCUPIED = 100
 
@@ -27,6 +29,8 @@ class RobotLocalizer():
 		random.seed(0)
 		self.json_data = read_config()
 		self.orig_grid = None
+		self.laser_data = None
+		self.pose_array = None
 		self.setup_subs()
 		while self.orig_grid == None:
 			rospy.sleep(0.5)
@@ -35,11 +39,14 @@ class RobotLocalizer():
 		self.MapInstance = Map(self.orig_grid)
 		self.laser_array = []
 		self.constructLikelihood()
+		while self.laser_data == None:
+			rospy.sleep(0.5)
+
 		self.move_robot()
 		self.out_file_pub.publish(Bool(data=True))
 		rospy.sleep(1)
 		rospy.signal_shutdown("All Done.")
-		rospy.spin()
+		
 			
 	def move_robot(self):
 		move_list = self.json_data["move_list"]
@@ -48,13 +55,14 @@ class RobotLocalizer():
 
 			theta = move[0]			
 			move_function(theta,0)
-			for particle in self.particles_array:
+			for particle in self.particle_array:
 				particle.theta += theta
 
-			for num_steps in move[2]:
+			for num_steps in range(move[2]):
+				print "step: ", num_steps
 				dist = move[1]			
 				move_function(0, dist)
-				for particle in self.particles_array:
+				for particle in self.particle_array:
 					particle.x += math.cos(particle.theta) * dist
 					particle.y += math.sin(particle.theta) * dist
 
@@ -65,13 +73,14 @@ class RobotLocalizer():
 						["first_move_sigma_y"])
 					theta_noise = random.gauss(0, self.json_data
 						["first_move_sigma_angle"])
- 					for particle in self.particles_array:
+ 					for particle in self.particle_array:
 						particle.x += x_noise
 						particle.y += y_noise
 						particle.theta += theta_noise	
-				for idx,particle in enumerate(self.particles_array):			
+
+				for idx,particle in enumerate(self.particle_array):			
 					particle.pose = get_pose(particle.x, particle.y,particle.theta)	
-					if self.MapInstance.get_cell(particle.x, particle.y) == 1:
+					if math.isnan(self.MapInstance.get_cell(particle.x, particle.y)):
 						particle.weight = 0	
 					self.pose_array.poses[idx] = particle.pose
 					
@@ -81,13 +90,40 @@ class RobotLocalizer():
 				self.particlecloud_pub.publish(self.pose_array)
 
 	def re_sample(self):
-		new_particles = []
+		weights = [particle.weight for particle in self.particle_array]
+		samples = np.random.choice(self.particle_array,p=weights,size=self.num_particles)
+		
+
+		temp_list = []
+		for idx, sample in enumerate(samples):
+			particle = Particle(sample.x,sample.y,sample.theta,sample.weight)
+			particle.pose = sample.pose
+			x_noise = random.gauss(0, self.json_data["resample_sigma_x"])
+			y_noise = random.gauss(0, self.json_data["resample_sigma_y"])
+			angle_noise = random.gauss(0, self.json_data["resample_sigma_angle"])
+			particle.x += x_noise
+			particle.y += y_noise
+			particle.theta += angle_noise
+			temp_list.append(particle)
+
+			particle.pose = get_pose(sample.x, sample.y, sample.theta)	
+			self.pose_array.poses[idx] = particle.pose
+
+		self.particle_array = deepcopy(temp_list)
+
+		'''new_particles = []
 		idx = int(random.random() * self.num_particles)
 		beta = 0.0
-		max_weight = max(self.particle_array, key= lambda p:p.weight)
+		max_weight_instance = max(self.particle_array, key=lambda p:p.weight)
+		max_weight = max_weight_instance.weight
+		print "BEGIN SAMPLING"
+
 		for num in range(self.num_particles):
 			beta += random.random() * max_weight * 2.0
 			selected_particle = self.particle_array[idx]
+			if selected_particle.weight == 0:
+				continue
+
 			while beta > selected_particle.weight:
 				beta -= selected_particle.weight
 				idx = (idx + 1) % self.num_particles
@@ -105,53 +141,59 @@ class RobotLocalizer():
 			self.pose_array.poses[num] = selected_particle.pose
 	
 			new_particles.append(selected_particle)
-		self.particle_array = new_particles
+			
+		self.particle_array = new_particles'''
 				
 
 	def re_weight(self):
 		z_hit = self.json_data["laser_z_hit"]
 		z_rand = self.json_data["laser_z_rand"]
-		
+		print self.orig_grid.data
 		for particle in self.particle_array:
+			
 			pz_array = []
 			for idx, val in enumerate(self.laser_data.ranges):	
 				angle = particle.theta + (self.laser_data.angle_min +
-					angle_increment * idx)
+					self.laser_data.angle_increment * idx)
 				x = particle.x + val * math.cos(angle)
 				y = particle.y + val * math.sin(angle)
 				likelihood_prob = self.MapInstance.get_cell(x,y)
+				
 				if not math.isnan(likelihood_prob):
-					pz = z_hit * likelihodd_prob + z_rand
+					pz = z_hit * likelihood_prob + z_rand
 					pz_array.append(pz**3)
 			p_total = sum(pz_array)
 			particle.weight = (p_total+0.2) * particle.weight
+			 
 	
 	def normalize_weights(self):
 		total_weight = sum([particle.weight for particle in 		
 			self.particle_array])
+		
 		for particle in self.particle_array:
 			particle.weight = particle.weight/total_weight
 
+		total_weight = sum([particle.weight for particle in 		
+			self.particle_array])
+		
 	def constructLikelihood(self):
 		obstacles_array = []
 		all_coord = []
 		for r_idx, row in enumerate(self.MapInstance.grid):
 			for c_idx, col in enumerate(row):
-				all_coord.append((r_idx, c_idx))
-				if self.MapInstance.grid[r_idx][c_idx] == OCCUPIED:
-					obstacles_array.append((r_idx, c_idx))
+				x,y = self.MapInstance.cell_position(r_idx, c_idx)
+				all_coord.append([x, y])
+				if self.MapInstance.get_cell(x,y) != 0:
+					obstacles_array.append([x, y])
 
-		kdt = KDTree(obstacles_array, metric='euclidean')
-		dist = kdt.query(all_coord, k=1)
+		kdt = KDTree(obstacles_array)
+		dist = kdt.query(all_coord, k=1)[0][:]
 		variance = self.json_data["laser_sigma_hit"]
-		for idx, d in enumerate(dist):
-			self.MapInstance.grid[idx] = get_gaussian(d, variance)
+		probability = np.exp(-(dist**2)/ (2 *(variance**2)))
+		self.MapInstance.grid = probability.reshape(self.MapInstance.grid.shape)
 
 		self.likelihood_pub.publish(self.MapInstance.to_message())
 
-	def get_gaussian(self,dist, variance):	
-		power_e = math.e ** (-0.5 * ((float(dist)/variance)**2))
-		return power_e
 
 	def initParticles(self):
 		self.pose_array = PoseArray()
