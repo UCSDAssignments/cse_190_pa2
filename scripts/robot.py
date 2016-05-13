@@ -14,7 +14,7 @@ import numpy as np
 
 
 class Particle():
-	def __init__(self,x,y,theta, weight=0):
+	def __init__(self,x,y,theta, weight):
 		self.x = x
 		self.y = y
 		self.theta = theta
@@ -121,7 +121,7 @@ class RobotLocalizer():
 				particle.weight = 0
 				continue
 			pz_array = []
-			for idx, val in enumerate(self.laser_data.ranges):	
+			for idx,val in enumerate(self.laser_data.ranges[::10]):	
 				angle = particle.theta + (self.laser_data.angle_min +
 					self.laser_data.angle_increment * idx)
 				x = particle.x + val * math.cos(angle)
