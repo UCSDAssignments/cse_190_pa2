@@ -26,7 +26,7 @@ class RobotLocalizer():
 	def __init__(self):
 		rospy.init_node("robot_node", anonymous=True)
 		self.json_data = read_config()
-		random.seed(1000) #
+		random.seed(self.json_data["seed"]) #
 		self.orig_grid = None
 		self.laser_data = None
 		self.pose_array = None
