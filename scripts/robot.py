@@ -12,7 +12,6 @@ from copy import deepcopy
 import rospy, random, math
 import numpy as np
 
-OCCUPIED = 100
 
 class Particle():
 	def __init__(self,x,y,theta, weight=0):
@@ -26,8 +25,8 @@ class RobotLocalizer():
 
 	def __init__(self):
 		rospy.init_node("robot_node", anonymous=True)
-		random.seed(0)
 		self.json_data = read_config()
+		random.seed(self.json_data["seed"])
 		self.orig_grid = None
 		self.laser_data = None
 		self.pose_array = None
@@ -79,11 +78,11 @@ class RobotLocalizer():
 						particle.y += y_noise
 						particle.theta += theta_noise	
 
-				for idx,particle in enumerate(self.particle_array):			
-					particle.pose = get_pose(particle.x, particle.y,particle.theta)	
-					#if math.isnan(self.MapInstance.get_cell(particle.x, particle.y)):
-					#	particle.weight = 0	
-					self.pose_array.poses[idx] = particle.pose
+				#for idx,particle in enumerate(self.particle_array):			
+				#	particle.pose = get_pose(particle.x, particle.y,particle.theta)	
+				#	#if math.isnan(self.MapInstance.get_cell(particle.x, particle.y)):
+				#	#	particle.weight = 0	
+				#	self.pose_array.poses[idx] = particle.pose
 					
 				self.re_weight()
 				self.normalize_weights()
@@ -94,7 +93,6 @@ class RobotLocalizer():
 		weights = [particle.weight for particle in self.particle_array]
 		samples = np.random.choice(self.particle_array,p=weights,size=self.num_particles)
 		
-
 		temp_list = []
 		for idx, sample in enumerate(samples):
 			particle = Particle(sample.x,sample.y,sample.theta,sample.weight)
@@ -118,7 +116,8 @@ class RobotLocalizer():
 		z_rand = self.json_data["laser_z_rand"]
 		
 		for particle in self.particle_array:
-			if math.isnan(self.MapInstance.get_cell(particle.x,particle.y)):
+			val = self.MapInstance.get_cell(particle.x,particle.y)
+			if math.isnan(val) or val == 1:
 				particle.weight = 0
 				continue
 			pz_array = []
@@ -133,7 +132,7 @@ class RobotLocalizer():
 					pz = z_hit * likelihood_prob + z_rand
 					pz_array.append(pz**3)
 			p_total = sum(pz_array)
-			particle.weight = (p_total+0.2) * particle.weight
+			particle.weight =  particle.weight * (1/(1 + math.exp(-p_total))) # *(p_total+0.2)
 			 
 	
 	def normalize_weights(self):
@@ -200,7 +199,7 @@ class RobotLocalizer():
 		self.result_update_pub = rospy.Publisher("/result_update", Bool, 
 			queue_size=10)
 		self.out_file_pub = rospy.Publisher("/sim_complete", Bool,
-		queue_size=10)
+			queue_size=10)
 
 
 if __name__ == '__main__':
