@@ -31,13 +31,13 @@ class RobotLocalizer():
 		self.orig_grid = None
 		self.laser_data = None
 		self.pose_array = None
+		self.laser_array = []
 		self.setup_subs()
 		while self.orig_grid == None:
 			rospy.sleep(0.5)
 
 		self.initParticles()
 		self.MapInstance = Map(self.orig_grid)
-		self.laser_array = []
 		self.constructLikelihood()
 		while self.laser_data == None:
 			rospy.sleep(0.5)
@@ -53,10 +53,11 @@ class RobotLocalizer():
 		for move_idx, move in enumerate(move_list):
 			self.result_update_pub.publish(Bool(data=True))
 
+			#theta here is in degrees
 			theta = move[0]			
 			move_function(theta,0)
 			for particle in self.particle_array:
-				particle.theta += theta
+				particle.theta += math.radians(theta)
 
 			for num_steps in range(move[2]):
 				print "step: ", num_steps
@@ -80,8 +81,8 @@ class RobotLocalizer():
 
 				for idx,particle in enumerate(self.particle_array):			
 					particle.pose = get_pose(particle.x, particle.y,particle.theta)	
-					if math.isnan(self.MapInstance.get_cell(particle.x, particle.y)):
-						particle.weight = 0	
+					#if math.isnan(self.MapInstance.get_cell(particle.x, particle.y)):
+					#	particle.weight = 0	
 					self.pose_array.poses[idx] = particle.pose
 					
 				self.re_weight()
@@ -110,39 +111,6 @@ class RobotLocalizer():
 			self.pose_array.poses[idx] = particle.pose
 
 		self.particle_array = deepcopy(temp_list)
-
-		'''new_particles = []
-		idx = int(random.random() * self.num_particles)
-		beta = 0.0
-		max_weight_instance = max(self.particle_array, key=lambda p:p.weight)
-		max_weight = max_weight_instance.weight
-		print "BEGIN SAMPLING"
-
-		for num in range(self.num_particles):
-			beta += random.random() * max_weight * 2.0
-			selected_particle = self.particle_array[idx]
-			if selected_particle.weight == 0:
-				continue
-
-			while beta > selected_particle.weight:
-				beta -= selected_particle.weight
-				idx = (idx + 1) % self.num_particles
-			
-			x_noise = random.gauss(0, self.json_data["resample_sigma_x"])
-			y_noise = random.gauss(0, self.json_data["resample_sigma_y"])
-			angle_noise = random.gauss(0, self.json_data["resample_sigma_angle"])
-			
-			selected_particle.x += x_noise
-			selected_particle.y += y_noise
-			selected_particle.theta += angle_noise	
-
-			selected_particle.pose = get_pose(selected_particle.x, selected_particle.y,
-				selected_particle.theta)	
-			self.pose_array.poses[num] = selected_particle.pose
-	
-			new_particles.append(selected_particle)
-			
-		self.particle_array = new_particles'''
 				
 
 	def re_weight(self):
@@ -150,7 +118,7 @@ class RobotLocalizer():
 		z_rand = self.json_data["laser_z_rand"]
 		
 		for particle in self.particle_array:
-			if math.isnan(self.MapInstance.get_cell(particle.y,particle.x)):
+			if math.isnan(self.MapInstance.get_cell(particle.x,particle.y)):
 				particle.weight = 0
 				continue
 			pz_array = []
@@ -231,7 +199,7 @@ class RobotLocalizer():
 			latch=True, queue_size=10)
 		self.result_update_pub = rospy.Publisher("/result_update", Bool, 
 			queue_size=10)
-		self.out_file_pub = rospy.Publisher("/map_node/sim_complete", Bool,
+		self.out_file_pub = rospy.Publisher("/sim_complete", Bool,
 		queue_size=10)
 
 
